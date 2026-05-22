@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Clothing Reel Generator</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Clothing Reel Generator</h1>
+      <p class="subtitle">Paste a shop URL and get an Instagram-ready MP4 reel</p>
+    </header>
+
+    <main>
+      <form id="generateForm">
+        <div class="input-row">
+          <input
+            type="url"
+            id="shopUrl"
+            placeholder="https://example-shop.com/collections/all"
+            required
+            autocomplete="off"
+          />
+          <button type="submit" id="submitBtn">Generate Reel</button>
+        </div>
+      </form>
+
+      <div id="status" class="status hidden">
+        <div class="spinner"></div>
+        <p id="statusText">Starting…</p>
+        <div class="progress-bar">
+          <div class="progress-fill" id="progressFill"></div>
+        </div>
+        <p id="progressLabel" class="progress-label"></p>
+      </div>
+
+      <div id="result" class="result hidden">
+        <div class="success-icon">&#10003;</div>
+        <p>Your reel is ready!</p>
+        <a id="downloadLink" href="#" class="download-btn">Download MP4</a>
+        <button id="resetBtn" class="reset-btn">Generate Another</button>
+      </div>
+
+      <div id="errorBox" class="error hidden">
+        <p id="errorText"></p>
+        <button id="errorResetBtn" class="reset-btn">Try Again</button>
+      </div>
+    </main>
+
+    <footer>
+      <p>Powered by Claude AI &amp; MoviePy</p>
+    </footer>
+  </div>
+
+  <script>
+    const form = document.getElementById('generateForm');
+    const statusDiv = document.getElementById('status');
+    const statusText = document.getElementById('statusText');
+    const progressFill = document.getElementById('progressFill');
+    const progressLabel = document.getElementById('progressLabel');
+    const resultDiv = document.getElementById('result');
+    const errorBox = document.getElementById('errorBox');
+    const errorText = document.getElementById('errorText');
+    const downloadLink = document.getElementById('downloadLink');
+    const submitBtn = document.getElementById('submitBtn');
+
+    let pollInterval = null;
+
+    function showOnly(el) {
+      [statusDiv, resultDiv, errorBox].forEach(e => e.classList.add('hidden'));
+      if (el) el.classList.remove('hidden');
+    }
+
+    function reset() {
+      clearInterval(pollInterval);
+      showOnly(null);
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Generate Reel';
+      document.getElementById('shopUrl').value = '';
+    }
+
+    document.getElementById('resetBtn').addEventListener('click', reset);
+    document.getElementById('errorResetBtn').addEventListener('click', reset);
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const url = document.getElementById('shopUrl').value.trim();
+      if (!url) return;
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Working…';
+      progressFill.style.width = '0%';
+      progressLabel.textContent = '';
+      statusText.textContent = 'Scraping shop…';
+      showOnly(statusDiv);
+
+      let jobId;
+      try {
+        const res = await fetch('/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to start job');
+        jobId = data.job_id;
+      } catch (err) {
+        errorText.textContent = err.message;
+        showOnly(errorBox);
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Generate Reel';
+        return;
+      }
+
+      pollInterval = setInterval(async () => {
+        try {
+          const res = await fetch(`/status/${jobId}`);
+          const job = await res.json();
+
+          if (job.status === 'scraping') {
+            statusText.textContent = 'Scraping products…';
+            progressFill.style.width = '10%';
+          } else if (job.status === 'generating') {
+            const pct = job.total > 0
+              ? Math.round(10 + (job.progress / job.total) * 85)
+              : 10;
+            progressFill.style.width = pct + '%';
+            statusText.textContent = 'Generating video…';
+            progressLabel.textContent = job.total > 0
+              ? `Product ${job.progress} of ${job.total}`
+              : '';
+          } else if (job.status === 'done') {
+            clearInterval(pollInterval);
+            progressFill.style.width = '100%';
+            downloadLink.href = `/download/${job.file}`;
+            downloadLink.download = job.file;
+            showOnly(resultDiv);
+          } else if (job.status === 'error') {
+            clearInterval(pollInterval);
+            errorText.textContent = job.error || 'An unknown error occurred.';
+            showOnly(errorBox);
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Generate Reel';
+          }
+        } catch (err) {
+          // network blip — keep polling
+        }
+      }, 2000);
+    });
+  </script>
+</body>
+</html>
