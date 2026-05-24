@@ -22,20 +22,34 @@ source venv/bin/activate
 # Install dependencies
 echo "Installing dependencies..."
 pip install -q --upgrade pip
-pip install -q "moviepy==1.0.3" imageio[ffmpeg]
+pip install -q imageio[ffmpeg]
 pip install -q -r requirements.txt
 
 # Install Playwright browser
 echo "Installing Playwright browser..."
 playwright install chromium
 
-# API key setup
+# Anthropic API key
 if [ ! -f ".env" ] || ! grep -q "sk-ant" .env 2>/dev/null; then
   echo ""
-  echo "Paste your Anthropic API key (from console.anthropic.com):"
+  echo "Enter your Anthropic API key (from console.anthropic.com):"
   read -r apikey
   echo "ANTHROPIC_API_KEY=$apikey" > .env
-  echo "API key saved."
+  echo "Anthropic key saved."
+fi
+
+# Replicate API token (optional, for AI style vibes)
+if ! grep -q "REPLICATE_API_TOKEN" .env 2>/dev/null; then
+  echo ""
+  echo "Enter your Replicate API token for AI style vibes"
+  echo "(from replicate.com — press Enter to skip, you can add it later):"
+  read -r reptoken
+  if [ -n "$reptoken" ]; then
+    echo "REPLICATE_API_TOKEN=$reptoken" >> .env
+    echo "Replicate token saved."
+  else
+    echo "Skipped. Add REPLICATE_API_TOKEN to .env later to enable AI vibes."
+  fi
 fi
 
 # Run

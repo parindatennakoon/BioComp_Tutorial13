@@ -7,148 +7,301 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
 </head>
 <body>
-  <div class="container">
-    <header>
-      <h1>Clothing Reel Generator</h1>
-      <p class="subtitle">Paste a shop URL and get an Instagram-ready MP4 reel</p>
-    </header>
+<div class="container">
+  <header>
+    <h1>Clothing Reel Generator</h1>
+    <p class="subtitle">Generate Instagram-ready MP4 reels from any shop or your own products</p>
+  </header>
 
-    <main>
-      <form id="generateForm">
-        <div class="input-row">
-          <input
-            type="url"
-            id="shopUrl"
-            placeholder="https://example-shop.com/collections/all"
-            required
-            autocomplete="off"
-          />
-          <button type="submit" id="submitBtn">Generate Reel</button>
-        </div>
-      </form>
+  <main>
+    <!-- Tabs -->
+    <div class="tabs">
+      <button class="tab active" data-tab="scrape">Scrape Shop URL</button>
+      <button class="tab" data-tab="upload">Upload My Products</button>
+    </div>
 
-      <div id="status" class="status hidden">
-        <div class="spinner"></div>
-        <p id="statusText">Starting…</p>
-        <div class="progress-bar">
-          <div class="progress-fill" id="progressFill"></div>
-        </div>
-        <p id="progressLabel" class="progress-label"></p>
+    <!-- Scrape tab -->
+    <div id="tab-scrape" class="tab-content">
+      <div class="input-row">
+        <input type="url" id="shopUrl" placeholder="https://example-shop.com/collections/all" autocomplete="off" />
+        <button id="scrapeBtn">Generate</button>
+      </div>
+    </div>
+
+    <!-- Upload tab -->
+    <div id="tab-upload" class="tab-content hidden">
+      <div class="upload-area" id="uploadArea">
+        <div class="upload-icon">&#128247;</div>
+        <p>Drag &amp; drop product images here</p>
+        <p class="upload-sub">or</p>
+        <button type="button" id="browseBtn">Browse Files</button>
+        <input type="file" id="fileInput" accept="image/*" multiple hidden />
       </div>
 
-      <div id="result" class="result hidden">
-        <div class="success-icon">&#10003;</div>
-        <p>Your reel is ready!</p>
-        <a id="downloadLink" href="#" class="download-btn">Download MP4</a>
-        <button id="resetBtn" class="reset-btn">Generate Another</button>
+      <div id="productList" class="product-list"></div>
+
+      <div id="uploadActions" class="upload-actions hidden">
+        <input type="text" id="shopName" placeholder="Collection name (e.g. Summer 2025)" />
+        <button id="uploadGenerateBtn">Generate Reel</button>
       </div>
+    </div>
 
-      <div id="errorBox" class="error hidden">
-        <p id="errorText"></p>
-        <button id="errorResetBtn" class="reset-btn">Try Again</button>
+    <!-- Vibe selector -->
+    <div class="vibe-section">
+      <p class="vibe-label">AI Style Vibe <span class="vibe-badge">optional</span></p>
+      <p class="vibe-hint">Transforms your images using AI — requires a Replicate API token</p>
+      <div class="vibes">
+        <button class="vibe-btn active" data-vibe="">None</button>
+        <button class="vibe-btn luxury" data-vibe="luxury">Luxury</button>
+        <button class="vibe-btn retro" data-vibe="retro">Retro</button>
+        <button class="vibe-btn vintage" data-vibe="vintage">Vintage</button>
+        <button class="vibe-btn streetwear" data-vibe="streetwear">Streetwear</button>
+        <button class="vibe-btn minimalist" data-vibe="minimalist">Minimalist</button>
       </div>
-    </main>
+    </div>
 
-    <footer>
-      <p>Powered by Claude AI &amp; MoviePy</p>
-    </footer>
-  </div>
+    <!-- Status -->
+    <div id="statusBox" class="status hidden">
+      <div class="spinner"></div>
+      <p id="statusText">Starting…</p>
+      <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+      <p id="progressLabel" class="progress-label"></p>
+    </div>
 
-  <script>
-    const form = document.getElementById('generateForm');
-    const statusDiv = document.getElementById('status');
-    const statusText = document.getElementById('statusText');
-    const progressFill = document.getElementById('progressFill');
-    const progressLabel = document.getElementById('progressLabel');
-    const resultDiv = document.getElementById('result');
-    const errorBox = document.getElementById('errorBox');
-    const errorText = document.getElementById('errorText');
-    const downloadLink = document.getElementById('downloadLink');
-    const submitBtn = document.getElementById('submitBtn');
+    <!-- Result -->
+    <div id="resultBox" class="result hidden">
+      <div class="success-icon">&#10003;</div>
+      <p>Your reel is ready!</p>
+      <a id="downloadLink" href="#" class="download-btn">Download MP4</a>
+      <button id="resetBtn" class="reset-btn">Generate Another</button>
+    </div>
 
-    let pollInterval = null;
+    <!-- Error -->
+    <div id="errorBox" class="error hidden">
+      <p id="errorText"></p>
+      <button id="errorResetBtn" class="reset-btn">Try Again</button>
+    </div>
+  </main>
 
-    function showOnly(el) {
-      [statusDiv, resultDiv, errorBox].forEach(e => e.classList.add('hidden'));
-      if (el) el.classList.remove('hidden');
-    }
+  <footer><p>Powered by Claude AI, Replicate &amp; MoviePy</p></footer>
+</div>
 
-    function reset() {
-      clearInterval(pollInterval);
-      showOnly(null);
-      submitBtn.disabled = false;
-      submitBtn.textContent = 'Generate Reel';
-      document.getElementById('shopUrl').value = '';
-    }
+<script>
+// --- State ---
+let selectedVibe = '';
+let uploadedProducts = []; // {file, name, price}
+let pollInterval = null;
+let activeTab = 'scrape';
 
-    document.getElementById('resetBtn').addEventListener('click', reset);
-    document.getElementById('errorResetBtn').addEventListener('click', reset);
+// --- Tab switching ---
+document.querySelectorAll('.tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    activeTab = btn.dataset.tab;
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
+    document.getElementById('tab-' + activeTab).classList.remove('hidden');
+  });
+});
 
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const url = document.getElementById('shopUrl').value.trim();
-      if (!url) return;
+// --- Vibe selector ---
+document.querySelectorAll('.vibe-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.vibe-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    selectedVibe = btn.dataset.vibe;
+  });
+});
 
-      submitBtn.disabled = true;
-      submitBtn.textContent = 'Working…';
-      progressFill.style.width = '0%';
-      progressLabel.textContent = '';
-      statusText.textContent = 'Scraping shop…';
-      showOnly(statusDiv);
+// --- Shared helpers ---
+function showOnly(el) {
+  ['statusBox', 'resultBox', 'errorBox'].forEach(id =>
+    document.getElementById(id).classList.add('hidden')
+  );
+  if (el) el.classList.remove('hidden');
+}
 
-      let jobId;
-      try {
-        const res = await fetch('/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Failed to start job');
-        jobId = data.job_id;
-      } catch (err) {
-        errorText.textContent = err.message;
-        showOnly(errorBox);
-        submitBtn.disabled = false;
-        submitBtn.textContent = 'Generate Reel';
-        return;
+function reset() {
+  clearInterval(pollInterval);
+  showOnly(null);
+  document.getElementById('scrapeBtn').disabled = false;
+  document.getElementById('scrapeBtn').textContent = 'Generate';
+  document.getElementById('uploadGenerateBtn').disabled = false;
+  document.getElementById('uploadGenerateBtn').textContent = 'Generate Reel';
+}
+
+document.getElementById('resetBtn').addEventListener('click', reset);
+document.getElementById('errorResetBtn').addEventListener('click', reset);
+
+function startPolling(jobId) {
+  const progressFill = document.getElementById('progressFill');
+  const progressLabel = document.getElementById('progressLabel');
+  const statusText = document.getElementById('statusText');
+
+  pollInterval = setInterval(async () => {
+    try {
+      const res = await fetch('/status/' + jobId);
+      const job = await res.json();
+
+      if (job.status === 'scraping') {
+        statusText.textContent = 'Scraping shop…';
+        progressFill.style.width = '10%';
+        progressLabel.textContent = '';
+      } else if (job.status === 'styling') {
+        statusText.textContent = 'AI styling images… (may take 1–2 min)';
+        progressFill.style.width = '30%';
+        progressLabel.textContent = job.total > 0 ? job.total + ' images' : '';
+      } else if (job.status === 'generating') {
+        const pct = job.total > 0
+          ? Math.round(55 + (job.progress / job.total) * 40)
+          : 55;
+        progressFill.style.width = pct + '%';
+        statusText.textContent = 'Generating video…';
+        progressLabel.textContent = job.total > 0
+          ? 'Product ' + job.progress + ' of ' + job.total : '';
+      } else if (job.status === 'done') {
+        clearInterval(pollInterval);
+        progressFill.style.width = '100%';
+        const dl = document.getElementById('downloadLink');
+        dl.href = '/download/' + job.file;
+        dl.download = job.file;
+        showOnly(document.getElementById('resultBox'));
+      } else if (job.status === 'error') {
+        clearInterval(pollInterval);
+        document.getElementById('errorText').textContent = job.error || 'An error occurred.';
+        showOnly(document.getElementById('errorBox'));
+        reset();
       }
+    } catch (_) { /* network blip — keep polling */ }
+  }, 2000);
+}
 
-      pollInterval = setInterval(async () => {
-        try {
-          const res = await fetch(`/status/${jobId}`);
-          const job = await res.json();
+// --- Scrape flow ---
+document.getElementById('scrapeBtn').addEventListener('click', async () => {
+  const url = document.getElementById('shopUrl').value.trim();
+  if (!url) return;
 
-          if (job.status === 'scraping') {
-            statusText.textContent = 'Scraping products…';
-            progressFill.style.width = '10%';
-          } else if (job.status === 'generating') {
-            const pct = job.total > 0
-              ? Math.round(10 + (job.progress / job.total) * 85)
-              : 10;
-            progressFill.style.width = pct + '%';
-            statusText.textContent = 'Generating video…';
-            progressLabel.textContent = job.total > 0
-              ? `Product ${job.progress} of ${job.total}`
-              : '';
-          } else if (job.status === 'done') {
-            clearInterval(pollInterval);
-            progressFill.style.width = '100%';
-            downloadLink.href = `/download/${job.file}`;
-            downloadLink.download = job.file;
-            showOnly(resultDiv);
-          } else if (job.status === 'error') {
-            clearInterval(pollInterval);
-            errorText.textContent = job.error || 'An unknown error occurred.';
-            showOnly(errorBox);
-            submitBtn.disabled = false;
-            submitBtn.textContent = 'Generate Reel';
-          }
-        } catch (err) {
-          // network blip — keep polling
-        }
-      }, 2000);
+  const btn = document.getElementById('scrapeBtn');
+  btn.disabled = true;
+  btn.textContent = 'Working…';
+  document.getElementById('progressFill').style.width = '0%';
+  document.getElementById('statusText').textContent = 'Scraping shop…';
+  showOnly(document.getElementById('statusBox'));
+
+  try {
+    const res = await fetch('/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, vibe: selectedVibe }),
     });
-  </script>
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to start');
+    startPolling(data.job_id);
+  } catch (err) {
+    document.getElementById('errorText').textContent = err.message;
+    showOnly(document.getElementById('errorBox'));
+    btn.disabled = false;
+    btn.textContent = 'Generate';
+  }
+});
+
+// --- Upload flow ---
+const uploadArea = document.getElementById('uploadArea');
+const fileInput = document.getElementById('fileInput');
+
+document.getElementById('browseBtn').addEventListener('click', () => fileInput.click());
+
+uploadArea.addEventListener('dragover', e => { e.preventDefault(); uploadArea.classList.add('drag-over'); });
+uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('drag-over'));
+uploadArea.addEventListener('drop', e => {
+  e.preventDefault();
+  uploadArea.classList.remove('drag-over');
+  addFiles(Array.from(e.dataTransfer.files));
+});
+fileInput.addEventListener('change', () => {
+  addFiles(Array.from(fileInput.files));
+  fileInput.value = '';
+});
+
+function addFiles(files) {
+  files.filter(f => f.type.startsWith('image/')).forEach(file => {
+    const idx = uploadedProducts.length;
+    uploadedProducts.push({ file, name: '', price: '' });
+    renderCard(idx, file);
+  });
+  updateUploadActions();
+}
+
+function renderCard(idx, file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    const card = document.createElement('div');
+    card.className = 'product-card';
+    card.dataset.idx = idx;
+    card.innerHTML = `
+      <img src="${e.target.result}" class="product-thumb" />
+      <div class="product-inputs">
+        <input type="text" placeholder="Product name" class="pname" />
+        <input type="text" placeholder="Price (e.g. $49.99)" class="pprice" />
+      </div>
+      <button class="remove-card-btn" data-idx="${idx}">✕</button>
+    `;
+    card.querySelector('.pname').addEventListener('input', ev => {
+      if (uploadedProducts[idx]) uploadedProducts[idx].name = ev.target.value;
+    });
+    card.querySelector('.pprice').addEventListener('input', ev => {
+      if (uploadedProducts[idx]) uploadedProducts[idx].price = ev.target.value;
+    });
+    card.querySelector('.remove-card-btn').addEventListener('click', () => {
+      uploadedProducts[idx] = null;
+      card.remove();
+      updateUploadActions();
+    });
+    document.getElementById('productList').appendChild(card);
+  };
+  reader.readAsDataURL(file);
+}
+
+function updateUploadActions() {
+  const valid = uploadedProducts.filter(Boolean);
+  const actions = document.getElementById('uploadActions');
+  if (valid.length > 0) actions.classList.remove('hidden');
+  else actions.classList.add('hidden');
+}
+
+document.getElementById('uploadGenerateBtn').addEventListener('click', async () => {
+  const valid = uploadedProducts.filter(Boolean);
+  if (!valid.length) return;
+
+  const btn = document.getElementById('uploadGenerateBtn');
+  btn.disabled = true;
+  btn.textContent = 'Working…';
+  document.getElementById('progressFill').style.width = '0%';
+  document.getElementById('statusText').textContent = 'Uploading images…';
+  showOnly(document.getElementById('statusBox'));
+
+  const formData = new FormData();
+  formData.append('count', valid.length);
+  formData.append('vibe', selectedVibe);
+  formData.append('shop_name', document.getElementById('shopName').value || 'My Collection');
+  valid.forEach((p, i) => {
+    formData.append('image_' + i, p.file);
+    formData.append('name_' + i, p.name);
+    formData.append('price_' + i, p.price);
+  });
+
+  try {
+    const res = await fetch('/generate-from-uploads', { method: 'POST', body: formData });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to start');
+    startPolling(data.job_id);
+  } catch (err) {
+    document.getElementById('errorText').textContent = err.message;
+    showOnly(document.getElementById('errorBox'));
+    btn.disabled = false;
+    btn.textContent = 'Generate Reel';
+  }
+});
+</script>
 </body>
 </html>

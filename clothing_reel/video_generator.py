@@ -192,9 +192,16 @@ def create_reel(
         if progress_callback:
             progress_callback(i, len(products))
 
-        img = _download_image(product.get("image_url", ""))
+        local_path = product.get("local_image_path")
+        if local_path and os.path.exists(local_path):
+            try:
+                img = Image.open(local_path).convert("RGB")
+            except Exception:
+                img = None
+        else:
+            img = _download_image(product.get("image_url", ""))
         if img is None:
-            continue  # skip products whose image failed to download
+            continue
 
         frame = _make_product_frame(product, img)
         clip = _pil_to_moviepy(frame, SLIDE_DURATION)
